@@ -1,0 +1,629 @@
+---
+title: "Trabajo Final Instrumentos de Análisis Urbano II. MEU-UTDT. Año 2022."
+author: "TAMIS, Josefina"
+output: html_document
+---
+
+## **Presentación del tema y objetivos del Trabajo Final:** 
+
+El objetivo del presente trabajo es analizar la base de datos de Siniestros Viales en la Ciudad Autónoma de Buenos Aires, correspondiente a los años 2015-2018, a los fines de detectar factores de riesgo concurrentes en los siniestros que permitan aproximarnos a una distribución de los grupos más expuestos para comprender especificamente el problema y posibilitar la orientación de intervenciones de políticas públicas preventivas. 
+
+**Datasets a utilizar:**
+
+- Víctimas de siniestros viales: Información sobre las víctimas de siniestros viales ocurridos en la Ciudad desde el año 2015. Los datos incluyen fecha y ubicación del hecho y tipo de transporte involucrado. Además se especifica el género y edad de las víctimas y el tipo de lesión sufrida.
+- Comunas: Información geográfica de la locación (perímetro y área) de las comunas de la Ciudad establecidas a partir de la Ley Orgánica de Comunas (Ley Nº 1777/2005).
+
+**Proceso desarrollado:**
+
+En una primera instancia, se plantearon una serie de preguntas según las variables presentes en el dataset y en razgos generales para una primera aproximación a la problemática 
+
+Preguntas iniciales:
+
+* Cantidad de lesiones y de homicidios: distribución s/ años.
+* Distribución espacial de los siniestros en la Ciudad.
+* Tipo de vehículos predominantes.
+* Distribución s/ tipo y características de la calle.
+* Distribuciones s/ sexo y genero (detección de grupos de riesgo).
+* Distribución s/ horario del hecho.
+* Distribución s/ tipo de colisión y participantes_acusados.
+
+El trabajo se desarrolló de forma paralela abordando la Limpieza, Tratamiento y Transformación de datos según los objetivos particulares de cada Análisis y Visualización, presentando cada paso en cada apartado. Y, a su vez, en su desarrollo se fue recortando la población de estudio (tanto temporal como espacialmente y por grupos de riesgo específicos) a medida que los análisis iban arrojando resultados que caracterizaran grupos con mayor exposición.
+
+En este sentido es preciso resaltar dos cuestiones: el dataset está desactualizado (corresponde a los años 2015-2018) y también con algunos problemas de codificación y de completud de la propia base, sin embargo, se intentó orientar los análisis descriptivos para comprender el problema de una mejor manera. A lo largo del trabajo se van tomando algunas decisiones para la comprensión general de las variables, sin ahondar exhaustivamente en la reclasificación o recodificación de todos los registros con problemas de calidad o completitud, cuestión que se estimó excede al objetivo del presente Trabajo Final.
+
+### **0. Importar librerías**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+library(readr)
+library(haven)
+library(tidyverse)
+library(sf)
+library(geoAr)
+library(geofacet)
+library(ggmap)
+library(tables)
+```
+
+### **1. Limpieza de enviroment:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+rm(list=ls())	
+```
+
+### **2. Carga de datasets:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+comunas <- read_sf("https://cdn.buenosaires.gob.ar/datosabiertos/datasets/ministerio-de-educacion/comunas/comunas.geojson")
+
+siniestros_viales <- read_csv(file =  "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/transporte-y-obras-publicas/victimas-siniestros-viales/Victimas_siniestros_2015-2018.csv")
+```
+
+### **3. Exploración de datasets:**
+
+**Dimensiones de los datasets:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+dim(siniestros_viales)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+dim(comunas)
+```
+**Nombres de columnas:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+names(siniestros_viales)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+names(comunas)
+```
+**Resumen estadístico:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+summary(siniestros_viales)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+summary(comunas)
+```
+**Verificación de presencia de valores NA:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+apply(is.na(comunas), 2, sum)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+round(apply(is.na(siniestros_viales), 2, mean)*100)
+```
+*Los valores expresados en el último chunk están en porcentajes.*
+
+### **4. Mapeo de las geometrías:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot(comunas)+
+  geom_sf()+
+  geom_point(data=siniestros_viales, aes(x=x, y=y))
+```
+
+### **5. Unión espacial:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+siniestros_geo <- filter(siniestros_viales, !is.na(x)) %>% 
+  st_as_sf(coords = c("x", "y"), crs = 4326)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+sf_use_s2(FALSE)
+
+siniestros_comunas_geo <- st_join(siniestros_geo, comunas)
+```
+### **6. Análisis de datos:**
+ 
+#### **a- Análisis según Tipo de Siniestro y Año de ocurrencia. Variables= *causa* (homicidio/lesión) y *período*.**
+
+**Exploración gráfica:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+siniestros_comunas_geo <- mutate(siniestros_comunas_geo, causa=as.factor(causa)) %>% 
+  mutate(siniestros_comunas_geo, periodo=as.factor(periodo))
+
+ggplot(siniestros_comunas_geo) +
+  geom_bar(aes(x=periodo, fill=causa)) +
+  ggtitle("Víctimas de Siniestros por Año y según Tipo de siniestro.") +
+  labs(x= "Año",  y="Frecuencia", fill="Tipo de siniestro") +
+  scale_fill_manual(values=c('#ffeda0','#feb24c','#f03b20'))
+```
+
+**Valores totales:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+
+knitr::kable(siniestros_comunas_geo %>%
+      group_by(periodo, causa) %>%
+      summarise(cantidad = n()))
+```
+
+**Exploración de datos de 2018:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(siniestros_comunas_geo[siniestros_comunas_geo$periodo==2018,]%>%
+group_by(mes) %>%
+summarise(cantidad = n()))
+```
+
+El registro del año 2018 tiene solo algunos meses. Trabajamos solo con datos de 2015-2017.
+
+**Filtro:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+siniestros_comunas_geo <- siniestros_comunas_geo[siniestros_comunas_geo$periodo!=2018,]
+
+siniestros_comunas_geo %>% distinct(periodo)
+```
+**Conclusiones Parciales:** 
+
+* A priori se puede verificar una mínima reducción en la cantidad de registros para el año 2017 pero no demasiado significativa.  
+* La realción entre siniestros correspondientes a lesiones y a casos fatales parece ser proporcional en los 3 años, mantenido una constante.
+
+
+#### **b- Distribución espacial de los siniestros**
+
+**Cantidad de puntos por Comuna:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+siniestros_comunas_geo <- mutate(siniestros_comunas_geo, COMUNAS=as.factor(COMUNAS))
+
+ggplot(siniestros_comunas_geo)+
+  geom_bar(aes(x=COMUNAS, fill=causa))+
+  ggtitle("Victimas de Siniestros por Comuna y según Tipo") +
+  labs(x= "Comuna",  y="Frecuencia", fill="Tipo de siniestro")+
+  scale_fill_manual(values=c('#ffeda0','#feb24c','#f03b20'))
+```
+
+**Mapa coroplético:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+comunas_geo <- siniestros_comunas_geo %>%
+  group_by(COMUNAS) %>%
+  summarise(cantidad=n())
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+comunas_geo <- comunas_geo %>%
+  st_set_geometry(NULL)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+comunas_geo <- mutate(comunas_geo, COMUNAS=as.double(COMUNAS))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+comunas_geo <- left_join(comunas, comunas_geo, by="COMUNAS")
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot()+
+  geom_sf(data=comunas_geo, aes(fill=cantidad)) +
+  ggtitle("Victimas de Siniestros por Comuna") +
+  labs(fill="Cantidad") +
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank()) +
+  scale_fill_distiller(palette = "YlOrRd", direction = 1)+
+  ggplot2::geom_sf_label(data = comunas_geo, 
+                         aes(label = cantidad))
+ 
+```
+
+**Conclusiones Parciales:** 
+
+* Se puede verificar como la Comuna 1 y la Comuna 3 concentran gran cantidad de los Siniestros viales (ambas tienen registros mayores a 2600 casos), se estima que fundamentalmente se debe a la concentración del centro de la urbe en ese sector urbano.
+* Se detecta aún así una distribución homogénea de una alta cantidad de registros en el resto de las comunas (entre 1000 y 2200 casos).
+
+
+#### **c- Tipo de vehículos predominantes: evolución por año y distribución espacial**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+siniestros_comunas_geo <- mutate(siniestros_comunas_geo, tipo=as.factor(tipo))
+
+knitr::kable(arrange(filter(siniestros_comunas_geo %>%
+group_by(tipo) %>%
+summarise(n = n()), !is.na(tipo)), n))
+```
+
+**Agrupamos y filtramos los que tienen más de 100 registros:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+for (i in 1:(dim(siniestros_comunas_geo)[1])) {
+  if (siniestros_comunas_geo$tipo[i] 
+  %in% c('tren/subte', 'tren / subte / tranvia', 'transporte escolar', 'omnibus / minibus')){
+    siniestros_comunas_geo$tipo[i]='transporte publico'
+  } else
+  if (siniestros_comunas_geo$tipo[i] 
+  %in% c('vehiculo oficial', 'fuerza seguridad', 'camioneta', 'taxi/remis')){
+    siniestros_comunas_geo$tipo[i]='automovil'
+  }
+}
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(filter(siniestros_comunas_geo %>% group_by(tipo) %>% summarise(n = n()), n>100 & !is.na(tipo)) %>% 
+  rename('cantidad'=n) %>% 
+  arrange(desc(cantidad)))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+names <- filter(siniestros_comunas_geo %>% group_by(tipo) %>% summarise(n = n()), n>100 & !is.na(tipo))$tipo
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot(filter(siniestros_comunas_geo, tipo %in% names))+
+  geom_bar(aes(x=tipo, fill=causa))+
+  ggtitle("Victimas de Siniestros por Tipo de vehiculo") +
+  labs(x= "Tipo de vehiculo",  y="Frecuencia", fill="Tipo de siniestro") +
+  scale_fill_manual(values=c('#ffeda0','#feb24c','#f03b20')) +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+**Tile-map:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+(CABA_grid <- geoAr::get_grid(district = "CABA"))
+
+geofacet::grid_preview(CABA_grid)
+```
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+head(CABA_grid)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+CABA_grid <- mutate(CABA_grid, code=as.numeric(code))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+CABA_grid <- mutate(CABA_grid, name=as.factor(code))
+
+ggplot(filter(siniestros_comunas_geo, tipo %in% names)%>%
+  group_by(COMUNAS, tipo) %>%
+  summarise(cantidad=n()),
+       aes(tipo, cantidad, fill = tipo)) +
+  geom_col() +
+  coord_flip() +
+  theme_bw() +
+  facet_geo(~ COMUNAS, grid = CABA_grid, label = "code") +
+  ggtitle("Victimas de Siniestros por Comuna y según Tipo de vehiculo") +
+  labs(fill="Tipo de Vehiculo") +
+  scale_fill_manual(values=c('#ffffb2','#fecc5c','#fd8d3c','#f03b20','#bd0026')) +
+  theme(axis.title.x=element_blank(),
+        axis.title.y=element_blank())+
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+**Conclusiones Parciales:**
+
+* En las primeras visualizaciones generales de toda la Capital Federal se verifica que por mucha diferencia las motos son el principal vehículo de riesgo a la hora de exponerse a siniestros viales, tanto de heridas como fatales.
+* Sin embargo, se puede verificar que en las comunas de interés (Comuna 1 y 3, al ser aquellas con la mayor cantidad de registros), a diferencia de otras comunas, la cantidad de peatones involucrados en siniestros de tránsito también se vuelve predominante. Los motociclistas siguen siendo los usuarios con mayor vulnerabilidad ante siniestros viales, sin embargo con poca diferencia frente a peatones. 
+* Se avanzará en un estudio pormenorizado en ambas comunas para ambos tipos de vehiculos.
+
+
+#### **Estudio particular respecto a motos y peatones en comuna 1 y 3 (tipos involucrados con más siniestros registrados):**
+
+**Filtro:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro_siniestros_comunas_geo <- filter(siniestros_comunas_geo, ((COMUNAS %in% c(1,3) & tipo %in% c('moto', 'peaton'))))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+dim(filtro_siniestros_comunas_geo)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(filtro_siniestros_comunas_geo %>% 
+  group_by(COMUNAS, tipo) %>% 
+  summarise(n()) %>%
+  arrange(tipo))
+```
+
+**Evolucion de siniestros con motos y peatones en Comunas 1 y 3 según distribucion temporal:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot(filtro_siniestros_comunas_geo)+
+  geom_bar(aes(x=periodo, fill=tipo), position="dodge")+
+  scale_fill_manual(values=c('#ffeda0','#feb24c')) +
+  ggtitle("Victimas de Siniestros por Año y según Tipo ") +
+  labs(x='Frecuencia', y='Año', fill="Tipo de transporte") 
+```
+
+**Conclusiones parciales:**
+
+* En el gráfico no se pueden observar grandes variaciones en los totales según años. 
+* Siguiendo en ambos tipos de transporte una predominancia de sineistros en el año 2016.
+
+**Serie de tiempo:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(filtro_siniestros_comunas_geo %>% 
+group_by(periodo, mes, tipo) %>% 
+summarise('cantidad'=n()) %>%
+arrange(periodo, mes)) 
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot(filtro_siniestros_comunas_geo %>% group_by(periodo, mes, tipo) %>% summarise('cantidad'=n()) %>% mutate(mes=as.numeric(mes)) %>% arrange(periodo, mes) ) +
+aes(x = mes, y = cantidad, color=tipo) +
+geom_line() +
+geom_point() +
+facet_wrap(~periodo)+
+scale_x_continuous(breaks = c(1:12))+
+ggtitle("Serie de tiempo de Victimas de Siniestros según Tipo ") +
+labs(x='Meses', y='Cantidad', fill="Tipo de transporte") +
+  scale_color_manual(values=c('#fecc5c','#f03b20'))
+```
+
+
+Conclusiones Parciales:
+
+* La serie de tiempo tiene algunos registros de meses no constantes que permite suponer que hay cuestiones más referidas a la recolección de los datos que a la distribución concreta de los siniestros en el tiempo.
+* No se van a tomar conclusiones definitivas respecto a estos datos.
+
+#### **d-Distribuciones s/ sexo y edad (detección de grupos de riesgo)**
+
+**Creación de intervalos etarios:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro_siniestros_comunas_geo <- mutate(filtro_siniestros_comunas_geo, edad=as.numeric(edad))
+
+filtro_siniestros_comunas_geo$edad_intervalos <- cut(filtro_siniestros_comunas_geo$edad, breaks=c(0,10,20,30,40,50,60,70,80,90))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro_siniestros_comunas_geo <- mutate(filtro_siniestros_comunas_geo, edad=as.factor(edad_intervalos))
+
+ggplot(filter(filtro_siniestros_comunas_geo, (!is.na(edad_intervalos)))) +
+  geom_bar(aes(x=edad_intervalos, fill=sexo))+
+  scale_fill_manual(values=c('#ffeda0','#feb24c','#f03b20')) +
+  ggtitle("Distribucion de siniestros según rango etario y género de las victimas") +
+  labs(x='Rango etario', y='Cantidad', fill="Género de la víctima") 
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro_siniestros_comunas_geo <- mutate(filtro_siniestros_comunas_geo, edad=as.factor(edad_intervalos))
+
+ggplot(filter(filtro_siniestros_comunas_geo, (!is.na(edad_intervalos)))) +
+  geom_bar(aes(x=edad_intervalos, fill=sexo))+
+  scale_fill_manual(values=c('#ffeda0','#feb24c','#f03b20')) +
+  facet_wrap(~tipo)+
+  ggtitle("Distribucion de siniestros según rango etario y género de las victimas según tipo de tranporte") +
+  labs(x='Rango etario', y='Cantidad', fill="Género de la víctima") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+**Conclusiones Parciales:**
+
+* En el análisis se puede detectar que el los grupos etarios más expuestos a siniestros viales son aquellos entre 20 y 40 años, con predominancia de los hombres.
+* Al momento de evaluar las distribuciones según tipo de transporte utilizado se encuentra que esta predominancia es aún mayor cuando el vehículo utilizado son las motos. Siendo por mucha diferencia el principal grupo de rriesgo expuesto en este tipo de siniestros.
+
+#### **Estudio particular respecto a motos conducidas por varones entre 20-40 años (detección de grupo de riesgo) en comuna 1 y 3 (involucrados con más siniestros registrados):**
+
+El objetivo de los recortes es detectar factores concurrentes o características especificas de los hechos que permita dirigir políticas publicas de prevención.
+
+**Filtro:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro2_siniestros_comunas_geo <- filter(filtro_siniestros_comunas_geo, ((sexo == 'masculino' & tipo == 'moto' & edad_intervalos %in% c('(20,30]','(30,40]'))))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+dim(filtro2_siniestros_comunas_geo)
+```
+
+
+#### **e- Distribución s/ horario del hecho**
+
+**Generación de rangos horarios:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro2_siniestros_comunas_geo <- filtro2_siniestros_comunas_geo %>% 
+mutate(hora_general = str_sub(string = filtro2_siniestros_comunas_geo$hora, start = 1, end = 2))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro2_siniestros_comunas_geo <- mutate(filtro2_siniestros_comunas_geo, hora_general=as.numeric(hora_general))
+
+filtro2_siniestros_comunas_geo <- filtro2_siniestros_comunas_geo %>% 
+mutate(rango_horario = case_when(
+  ((hora_general >= 00) & (hora_general < 06)) ~ '0.00-6.00',
+  ((hora_general >= 06) & (hora_general < 12)) ~ '6.00-12.00',
+  ((hora_general >= 12) & (hora_general < 18)) ~ '12.00-18.00',
+  (hora_general >= 18) ~ '18.00-00.00'))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(filtro2_siniestros_comunas_geo %>%
+group_by(rango_horario) %>%
+summarise(n = n()))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro2_siniestros_comunas_geo <- filtro2_siniestros_comunas_geo %>%
+mutate(rango_horario = factor(rango_horario,c('0.00-6.00','6.00-12.00','12.00-18.00','18.00-00.00')))
+
+ggplot(filtro2_siniestros_comunas_geo)+
+  geom_bar(aes(x=rango_horario, fill='1'))+
+  ggtitle("Victimas de Siniestros por Rango horario") +
+  scale_fill_manual(values=c('#feb24c'))+
+  labs(x= "Rango horario",  y="Frecuencia")+
+  theme(legend.position='none')
+```
+
+**Conclusiones Parciales:**
+
+* Se puede detectar que el los rangos horarios de exposición a siniestros viales más frecuentes son aquellos entre las 6.00hs y las 18.00hs, predominando el rango 12.00hs-18.00hs. 
+* Puede intuirse que se debe a que la mayoría de los mismos se concentran en viajes por motivos laborales.
+
+
+#### **f- Distribución s/ tipo de vía e intersección**
+
+**Tipo de vía:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot(filtro2_siniestros_comunas_geo)+
+  geom_bar(aes(x=tipo_calle,  fill='1'))+
+   ggtitle("Victimas de Siniestros por Tipo de Vía") +
+  labs(x= "Tipo de Vía",  y="Frecuencia")+
+  scale_fill_manual(values=c('#feb24c'))+
+  theme(legend.position='none')
+```
+
+**Intersecciones:**
+
+Clasificacón según intervenciones (*creación de variable dummy: 1=intersección / 0= no intersección*)
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro2_siniestros_comunas_geo <- filtro2_siniestros_comunas_geo %>% 
+mutate(interseccion= case_when(
+  codigo_cruce == 0 ~ 0,
+  is.na(codigo_cruce) ~ 0,
+  codigo_cruce > 0 ~ 1))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro2_siniestros_comunas_geo <- mutate(filtro2_siniestros_comunas_geo, interseccion=as.factor(interseccion))
+
+ggplot(filtro2_siniestros_comunas_geo)+
+  geom_bar(aes(x=interseccion, fill='1'))+
+   ggtitle("Victimas de Siniestros en Intersecciones") +
+  labs(x= "Intersección",  y="Frecuencias")+
+  scale_fill_manual(values=c('#feb24c'))+
+  theme(legend.position='none') 
+```
+
+**Mapa de densidad de siniestros: Puntos de calor de localizaciones más concurridas**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+bbox <- st_bbox(filtro2_siniestros_comunas_geo)
+class(bbox)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+bbox <- as.numeric(bbox)
+class(bbox)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+mapa_base <- get_stamenmap(bbox = bbox, 
+                           maptype = "terrain", 
+                           zoom = 12)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+filtro2_siniestros_comunas_geo <- st_as_sf(filtro2_siniestros_comunas_geo, coords = c("LONGITUDE", "LATITUDE"), crs = 4326)
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggmap(mapa_base) + 
+  geom_sf(data = filtro2_siniestros_comunas_geo, inherit.aes = FALSE, fill = NA, size = 1.2) + 
+  theme_void()
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+siniestros_coord <- filtro2_siniestros_comunas_geo %>%
+  select(geom) %>%
+  cbind(st_coordinates(filtro2_siniestros_comunas_geo))
+```
+
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+siniestros_coord <- siniestros_coord %>%
+  mutate(X=as.numeric(X))%>%
+  mutate(Y=as.numeric(Y))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggmap(mapa_base) + 
+stat_density2d(data = siniestros_coord %>% cbind(., st_coordinates(siniestros_coord)), 
+               aes(x = X, y = Y, fill = ..density..), 
+                geom = 'tile', contour = FALSE, alpha = 0.75)+ 
+    geom_sf(data = comunas,
+            fill = NA, alpha = 0.5, inherit.aes = FALSE) +
+  labs(title = "Concentración de siniestros viales",
+       fill = "Densidad") + 
+  scale_fill_distiller(palette = "YlOrRd", direction = 1) + 
+  theme_void()
+```
+
+
+**Conclusiones Parciales:**
+
+* Tanto el registro de datos por tipo de vía e intersección como el mapeo de puntos en el plano nos permite determinar que la mayor cantidad de siniestros ocurre en avenidas (predominando la Av Juju, Corrientes, 9 de Julio y Rivadavia) y, particularmente, en sectores de intersección entre vías y no en el tramo entre las mismas.
+
+#### **g- Distribución s/ tipo-colision y participante acusado**
+
+**Tipo de colisión:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(filtro2_siniestros_comunas_geo %>%
+group_by(tipo_colision1, causa) %>%
+summarise(n = n()) %>%
+  arrange(tipo_colision1))
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot(filter(filtro2_siniestros_comunas_geo, !is.na(tipo_colision1)))+
+  geom_bar(aes(x=tipo_colision1, fill=causa))+
+   ggtitle("Victimas de Siniestros por Tipo de Colisión") +
+  labs(x= "Tipo de colisión",  y="Frecuencia", fill='Tipo de Homicidio')+
+  scale_fill_manual(values=c('#ffeda0','#feb24c')) +  
+  coord_flip() +
+  theme(legend.position='none') 
+```
+
+**Participante acusado:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(filtro2_siniestros_comunas_geo %>%
+group_by(participantes_acusados) %>%
+summarise(n = n()) %>%
+  arrange(desc(n)))
+```
+
+**Filtramos para graficar los que tienen más de 30 registros:**
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+participantes <- filter(filtro2_siniestros_comunas_geo %>%
+group_by(participantes_acusados) %>%
+summarise(n = n()) %>%
+  arrange(desc(n)), n>30)$participantes_acusados
+```
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+ggplot(filter(filtro2_siniestros_comunas_geo, participantes_acusados %in% participantes)) +
+  geom_bar(aes(x=participantes_acusados, fill=causa))+
+   ggtitle("Victimas de Siniestros por Tipo de participante acusado") +
+  labs(x= 'Participante acusado', y= 'Frecuencia', fill='Tipo de Homicidio')+
+  scale_fill_manual(values=c('#ffeda0','#feb24c')) +  
+  coord_flip()  +
+  theme(legend.position='none')
+``` 
+
+```{r, warning=FALSE, cache=FALSE, message=FALSE}
+knitr::kable(filter(filtro2_siniestros_comunas_geo, participantes_acusados %in% participantes) %>%
+group_by(participantes_acusados, causa) %>%
+summarise(n = n()) %>%
+  arrange(desc(participantes_acusados)))
+```
+
+**Conclusiones Parciales:**
+
+* Se puede detectar que la predominancia de siniestros tiene que ver con aquellos en los que están involucrados un automóvil y una motocicleta. No hay registro claro de si la variable *tipo de colisión* registra cuál fue el vehículo que impacto primero, por lo que no se tomarán conclusiones al respecto.
+* A su vez, estos tipos de siniestros son los que registran mayor cantidad de homicidios, por lo que deben ser de interés a la hora de pensar políticas de prevención.
+
+**8. Conclusiones Finales:**
+
+El trabajo nos permitió obtener algunas conclusiones específicas sobre los siniestros viales en la Ciudad Autónoma de Buenos Aires en el rango de tiempo perteneciente al dataset. El objeitovs principal fue recortar la población de estudio a los fines de profundizar en aquellos grupos de riesgo que fueron detectados en el transcurso del análisis. Se ahondó en un primer lugar en siniestros con victimas motociclistas o peatones, para posteriormente hacer un análisis pormenorizado de siniestros con victimas motociclistas, varios entre 20 y 40 años.
+
+Sería interesante ahondar en estudios que profundicen la distribución espacial en toda la ciudad, así como también en otros grupos de riesgo específicos. A su vez, sería interesante detectar como los siniestros evolucionaron hasta fechas más recientes.
+
+Otra cuestión de interés sería evaluar si la localización de los siniestros nos permite cruzar con otros datos específicos de la vía (señalización, presencia de semáforos, presencia de sendas peatonales, pendiente, sistemas de protección, materialidd, etc) que permitan orientar intervenciones específicas en la ciudad.
+
